@@ -180,7 +180,8 @@ def main() -> None:
     st.markdown(
         """
         ### Run dependencies
-        1. Start cadence API: `uvicorn api_endpoint.algo:app --reload --port 8000`
+        1. Start cadence API from repo root: `uvicorn --app-dir . api_endpoint.algo:app --reload --port 8000`
+           - If running from `merged_frontend/`: `uvicorn --app-dir .. api_endpoint.algo:app --reload --port 8000`
         2. Start player server from this folder: `uvicorn player_server:app --reload --port 8502`
         3. Open player page once: `http://127.0.0.1:8502/player` and click **Start / Resume**
         4. Run this frontend: `streamlit run streamlit_merged_app.py`
