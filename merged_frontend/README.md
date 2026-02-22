@@ -75,3 +75,27 @@ python -m streamlit run merged_frontend/streamlit_merged_app.py --server.port 86
 - Primary search path: `merged_frontend/music`
 - Fallback search path: `crossfade/music`
 - Expected filename style: `"<bpm> - <name>.mp3"` (BPM normalized 50–145 in steps of 5)
+
+
+## Commands to interface with your friend's API (`172.20.10.5:8000`)
+
+```bash
+# 1) Health check
+curl -sS http://172.20.10.5:8000/
+
+# 2) Read current tempo + mood
+curl -sS http://172.20.10.5:8000/tempo_mood
+
+# 3) Send accelerometer samples (example payload)
+curl -sS -X POST http://172.20.10.5:8000/acc_data \
+  -H "Content-Type: application/json" \
+  -d '{"data":[0.1,0.3,0.9,0.2,0.8,0.15,0.7,0.1]}'
+
+# 4) Launch merged Streamlit app against friend's API (explicit env override)
+TEMPO_API=http://172.20.10.5:8000/tempo_mood \
+python -m streamlit run merged_frontend/streamlit_merged_app.py
+
+# 5) Launch crossfade Streamlit app against friend's API (explicit env override)
+TEMPO_API=http://172.20.10.5:8000/tempo_mood \
+python -m streamlit run crossfade/streamlit_app.py
+```
