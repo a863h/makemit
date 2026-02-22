@@ -4,6 +4,12 @@
 #include "esp_log.h"
 #include "driver/i2c.h"
 
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
+
 static const char *TAG = "MMA8451_SENSOR";
 
 // Pin Definitions from your table
@@ -79,8 +85,90 @@ static esp_err_t write_reg(uint8_t reg, uint8_t data)
   return i2c_master_write_to_device(I2C_MASTER_NUM, MMA8451_ADDR, write_buf, 2, pdMS_TO_TICKS(100));
 }
 
+esp_err_t _http_event_handler(esp_http_client_event_t *evt)
+{
+  if (evt->event_id == HTTP_EVENT_ON_DATA)
+  {
+    printf("%.*s", evt->data_len, (char *)evt->data);
+  }
+  return ESP_OK;
+}
+
+void make_google_request()
+{
+  esp_http_client_config_t config = {
+      .url = "http://unnoteworthy-pseudoethical-malisa.ngrok-free.dev",
+      .method = HTTP_METHOD_GET,
+      // .crt_bundle_attach = esp_crt_bundle_attach,
+  };
+
+  esp_http_client_handle_t client = esp_http_client_init(&config);
+
+  esp_err_t err = esp_http_client_perform(client);
+  if (err == ESP_OK)
+  {
+    printf("HTTP GET Status = %d, content_length = %lld\n",
+           esp_http_client_get_status_code(client),
+           esp_http_client_get_content_length(client));
+  }
+  else
+  {
+    printf("HTTP GET request failed: %s\n", esp_err_to_name(err));
+  }
+
+  esp_http_client_cleanup(client);
+}
+
 void app_main(void)
 {
+
+  // WIFI
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+  {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+
+  // 2. Initialize TCP/IP and Event Loop
+  ESP_ERROR_CHECK(esp_netif_init());
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+  // esp_netif_create_default_wifi_sta();
+
+  // 3. Wi-Fi Configuration
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+  wifi_config_t wifi_config = {
+      .sta = {
+          .ssid = "MIT",
+          .password = "RxS1T7_)hP",
+      },
+  };
+
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+
+  // 4. Start!
+  ESP_ERROR_CHECK(esp_wifi_start());
+  esp_wifi_connect();
+
+  // 1. Wait here indefinitely until notified by the event_handler
+  printf("Waiting for IP...\n");
+  esp_netif_ip_info_t ip_info;
+
+  // This loop simply asks the system "Do we have an IP?" every 500ms
+  while (esp_netif_get_ip_info(sta_netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0)
+  {
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+
+  // 2. SUCCESS! The code only reaches this line once you have an IP.
+  printf("IP Received! Connecting to my server...\n");
+  make_google_request();
+
   // 1. Setup I2C
   ESP_ERROR_CHECK(i2c_master_init());
   ESP_LOGI(TAG, "I2C initialized on SDA:5, SCL:6");
