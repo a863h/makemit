@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from typing import List
 from enum import Enum
+from pydantic import BaseModel
 
 import numpy as np
 from scipy.signal import find_peaks, butter, filtfilt
@@ -16,6 +17,9 @@ class Emotions(Enum):
     SAD = 4
     ANGRY = 5
     NERVOUS = 6
+
+class AccelData(BaseModel):
+    data: List[float]
 
 accelerations = []
 tempo = 70
@@ -51,10 +55,11 @@ async def root():
   return "hey there"
 
 @app.post("/acc_data")
-async def acc_data(acc: List[float]):
-  accelerations += acc
-  print(accelerations)
-  return "Received accelerations"
+async def receive_accelerations(payload: AccelData):
+    print(f"Received {len(payload.data)} acceleration points.")
+    print(payload.data)
+    # You can now pass payload.data to your RL model or processing script
+    return {"received": len(payload.data)}
 
 @app.get("/tempo_mood")
 async def get_tempo_mood():

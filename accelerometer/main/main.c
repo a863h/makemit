@@ -97,9 +97,9 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 void make_google_request()
 {
   esp_http_client_config_t config = {
-      .url = "http://unnoteworthy-pseudoethical-malisa.ngrok-free.dev",
+      .url = "http://10.29.199.121:8000/", // Use your laptop's actual 10.29 IP
       .method = HTTP_METHOD_GET,
-      // .crt_bundle_attach = esp_crt_bundle_attach,
+      // No certificate bundle needed for local HTTP!
   };
 
   esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -113,10 +113,108 @@ void make_google_request()
   }
   else
   {
+    // If you see a -0x7280 error here, check if your ngrok tunnel is still active
     printf("HTTP GET request failed: %s\n", esp_err_to_name(err));
   }
 
   esp_http_client_cleanup(client);
+}
+
+void post_acceleration_list(float *accel_data, int length)
+{
+  // 1. Prepare the buffer
+  char *post_data = malloc(2048);
+  if (post_data == NULL)
+    return;
+
+  // 2. Build the JSON string manually: {"data": [1.2, 3.4, ...]}
+  int offset = sprintf(post_data, "{\"data\": [");
+  for (int i = 0; i < length; i++)
+  {
+    offset += sprintf(post_data + offset, "%.2f%s",
+                      accel_data[i],
+                      (i == length - 1) ? "" : ",");
+  }
+  sprintf(post_data + offset, "]}");
+
+  // 3. Configure the HTTP Client
+  esp_http_client_config_t config = {
+      .url = "http://10.29.199.121:8000/acc_data",
+      .method = HTTP_METHOD_POST,
+      .event_handler = _http_event_handler,
+  };
+  esp_http_client_handle_t client = esp_http_client_init(&config);
+
+  esp_http_client_set_header(client, "Content-Type", "application/json");
+  esp_http_client_set_post_field(client, post_data, strlen(post_data));
+
+  // 4. Perform the request
+  esp_err_t err = esp_http_client_perform(client);
+  if (err == ESP_OK)
+  {
+    printf("Sent 150 floats. Status = %d\n", esp_http_client_get_status_code(client));
+  }
+
+  // 5. Cleanup
+  esp_http_client_cleanup(client);
+  free(post_data);
+}
+
+#define MAX_SAMPLES 150
+float accel_buffer[MAX_SAMPLES];
+
+esp_err_t mma8451_read_accel(float *x, float *y, float *z)
+{
+  uint8_t raw_data[6];
+  // Read 6 bytes starting from OUT_X_MSB (0x01)
+  esp_err_t ret = i2c_master_write_read_device(I2C_NUM_0, MMA8451_ADDR,
+                                               (uint8_t[]){0x01}, 1,
+                                               raw_data, 6, 1000 / portTICK_PERIOD_MS);
+
+  if (ret == ESP_OK)
+  {
+    // 1. Combine into a full 16-bit signed integer first
+    // This keeps the sign bit at the very top (bit 15)
+    int16_t ix = (int16_t)((raw_data[0] << 8) | raw_data[1]);
+    int16_t iy = (int16_t)((raw_data[2] << 8) | raw_data[3]);
+    int16_t iz = (int16_t)((raw_data[4] << 8) | raw_data[5]);
+
+    // 2. The MMA8451 is 14-bit, left-justified.
+    // Instead of shifting and losing the sign, divide by 16384.0
+    // (4096 counts/g * 4 for the 2-bit left shift = 16384)
+    *x = ((float)ix / 16384.0) * GRAVITY_CONSTANT;
+    *y = ((float)iy / 16384.0) * GRAVITY_CONSTANT;
+    *z = ((float)iz / 16384.0) * GRAVITY_CONSTANT;
+  }
+  return ret;
+}
+
+void collect_and_send_data()
+{
+  int sample_count = 0;
+
+  while (sample_count < MAX_SAMPLES)
+  {
+    float x, y, z;
+
+    // Read the sensor (Assuming you have a function to get current g-values)
+    if (mma8451_read_accel(&x, &y, &z) == ESP_OK)
+    {
+      // Store just one axis (e.g., Z-axis) or compute magnitude
+      accel_buffer[sample_count] = x;
+      sample_count++;
+      accel_buffer[sample_count] = y;
+      sample_count++;
+      accel_buffer[sample_count] = z;
+      sample_count++;
+    }
+
+    // Control your sampling rate (e.g., 100Hz = 10ms delay)
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
+
+  // Once the buffer is full, send it to your laptop (10.29.199.121)
+  post_acceleration_list(accel_buffer, MAX_SAMPLES);
 }
 
 void app_main(void)
@@ -205,18 +303,6 @@ void app_main(void)
     uint8_t reg_start = REG_OUT_X_MSB;
     uint8_t reg_pl = REG_PL_STATUS;
 
-    esp_err_t ret = i2c_master_write_read_device(I2C_MASTER_NUM, MMA8451_ADDR, &reg_start, 1, data, 6, pdMS_TO_TICKS(100));
-
-    if (ret == ESP_OK)
-    {
-      // Convert 14-bit Big-Endian (MSB first)
-      int16_t x = ((int16_t)(data[0] << 8 | data[1])) >> 2;
-      int16_t y = ((int16_t)(data[2] << 8 | data[3])) >> 2;
-      int16_t z = ((int16_t)(data[4] << 8 | data[5])) >> 2;
-
-      process_data(x, y, z, pl_status);
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(100));
+    collect_and_send_data();
   }
 }
