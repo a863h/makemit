@@ -26,6 +26,8 @@ BPM_MIN, BPM_MAX, BPM_STEP = 50, 145, 5
 class TempoState:
     bpm: float
     mood: str
+    accelerometer_connected: bool
+    led_strip_connected: bool
 
 
 def clamp(n: int, lo: int, hi: int) -> int:
@@ -62,7 +64,16 @@ def fetch_tempo() -> TempoState:
 
     bpm = float(payload.get("tempo", 65))
     mood = str(payload.get("mood", "UNKNOWN"))
-    return TempoState(bpm=bpm, mood=mood)
+    devices = payload.get("devices", {})
+    accelerometer_connected = bool(devices.get("accelerometer_connected", False))
+    led_strip_connected = bool(devices.get("led_strip_connected", False))
+
+    return TempoState(
+        bpm=bpm,
+        mood=mood,
+        accelerometer_connected=accelerometer_connected,
+        led_strip_connected=led_strip_connected,
+    )
 
 
 async def send_ws_command(payload: dict) -> None:
@@ -91,6 +102,8 @@ def initialize_state() -> None:
         "last_updated": None,
         "auto_refresh": True,
         "refresh_seconds": 2,
+        "accelerometer_connected": False,
+        "led_strip_connected": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -107,6 +120,8 @@ def update_from_accelerometer() -> None:
     st.session_state.last_error = None
     st.session_state.api_bpm = tempo.bpm
     st.session_state.api_mood = tempo.mood
+    st.session_state.accelerometer_connected = tempo.accelerometer_connected
+    st.session_state.led_strip_connected = tempo.led_strip_connected
     st.session_state.last_updated = time.strftime("%H:%M:%S")
 
     target_bpm = normalize_bpm(tempo.bpm)
@@ -166,6 +181,14 @@ def main() -> None:
     st.write(f"**Current BPM (raw):** {st.session_state.api_bpm if st.session_state.api_bpm is not None else 'N/A'}")
     st.write(f"**Mood:** {st.session_state.api_mood}")
     st.write(f"**Last updated:** {st.session_state.last_updated or 'Never'}")
+
+    st.subheader("ESP32 device status")
+    st.write(
+        f"**Accelerometer ESP32:** {'Connected' if st.session_state.accelerometer_connected else 'Disconnected'}"
+    )
+    st.write(
+        f"**LED Strip ESP32:** {'Connected' if st.session_state.led_strip_connected else 'Disconnected'}"
+    )
 
     st.subheader("Track transition state")
     st.write(f"**Current playing BPM:** {st.session_state.current_bpm if st.session_state.current_bpm is not None else 'N/A'}")
