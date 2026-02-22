@@ -5,6 +5,11 @@
 #include "led_strip.h"
 #include <math.h> // Required for sinf()
 
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "esp_http_client.h"
+
 // Configuration
 #define LED_STRIP_BLINK_GPIO 0                  // D0 on Seeed XIAO ESP32-C6
 #define LED_STRIP_LED_NUM 10                    // Change to your actual LED count
@@ -126,6 +131,52 @@ void led_pulse_task(void *pvParameters)
 
 extern "C" void app_main(void)
 {
+    // WIFI
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // 2. Initialize TCP/IP and Event Loop
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    // esp_netif_create_default_wifi_sta();
+
+    // 3. Wi-Fi Configuration
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = "MIT",
+            .password = "RxS1T7_)hP",
+        },
+    };
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+
+    // 4. Start!
+    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_connect();
+
+    // 1. Wait here indefinitely until notified by the event_handler
+    printf("Waiting for IP...\n");
+    esp_netif_ip_info_t ip_info;
+
+    // This loop simply asks the system "Do we have an IP?" every 500ms
+    while (esp_netif_get_ip_info(sta_netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    // 2. SUCCESS! The code only reaches this line once you have an IP.
+    printf("IP Received! Connecting to my server...\n");
+
     led_strip_config_t strip_config = {
         .strip_gpio_num = LED_STRIP_BLINK_GPIO,
         .max_leds = LED_STRIP_LED_NUM,
