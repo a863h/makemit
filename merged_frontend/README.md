@@ -22,7 +22,12 @@ From repository root:
 
 2. Start accelerometer tempo API:
    ```bash
-   uvicorn api_endpoint.algo:app --reload --port 8000
+   uvicorn --app-dir . api_endpoint.algo:app --reload --port 8000
+   ```
+
+   If you are already inside `merged_frontend/`, use:
+   ```bash
+   uvicorn --app-dir .. api_endpoint.algo:app --reload --port 8000
    ```
 
 3. Start merged player server:
