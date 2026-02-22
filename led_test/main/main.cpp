@@ -10,7 +10,7 @@
 #define LED_STRIP_LED_NUM 10                    // Change to your actual LED count
 #define LED_STRIP_RMT_RES_HZ (10 * 1000 * 1000) // 10MHz resolution
 
-#define PULSE_BPM 80
+#define PULSE_BPM 40
 #define MS_PER_BEAT (60000 / PULSE_BPM)
 
 static const char *TAG = "LED_RAINBOW";
