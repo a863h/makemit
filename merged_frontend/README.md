@@ -1,49 +1,74 @@
 # Merged Accelerometer BPM + Crossfader Frontend
 
-This folder is a **new merged frontend** that keeps your original code untouched.
-
-It combines:
+This folder combines:
 - BPM from the accelerometer API (`/tempo_mood`)
 - Track selection by BPM
 - WebSocket commands to the crossfader player
-- A Streamlit UI showing:
-  - raw current BPM from accelerometer
-  - current playing BPM/song
-  - incoming (next) BPM/song
+- A Streamlit UI for observing BPM and track transitions
 
-## Run locally on your Mac
+## Why your `api_endpoint` import can fail
+
+If you run from `merged_frontend/`, Python sometimes does not include the repo root on the import path in the way you expect (depends on shell, venv, and uvicorn invocation).
+
+To avoid this, use **module mode** (`python -m uvicorn`) from repo root, or use the helper script below.
+
+## Recommended startup (most reliable)
 
 From repository root:
 
-1. Install deps (in your venv):
-   ```bash
-   pip install streamlit fastapi uvicorn websockets requests
-   ```
+```bash
+python -m uvicorn api_endpoint.algo:app --reload --port 8000
+python -m uvicorn merged_frontend.player_server:app --reload --port 8502
+python -m streamlit run merged_frontend/streamlit_merged_app.py
+```
 
-2. Start accelerometer tempo API:
-   ```bash
-   uvicorn --app-dir . api_endpoint.algo:app --reload --port 8000
-   ```
+Open:
+- Player page: http://127.0.0.1:8502/player (click **Start / Resume** once)
+- Streamlit page: usually http://127.0.0.1:8501
 
-   If you are already inside `merged_frontend/`, use:
-   ```bash
-   uvicorn --app-dir .. api_endpoint.algo:app --reload --port 8000
-   ```
+## One-command startup
 
-3. Start merged player server:
-   ```bash
-   uvicorn merged_frontend.player_server:app --reload --port 8502
-   ```
+From repository root:
 
-4. Open player page and click **Start / Resume** once:
-   - http://127.0.0.1:8502/player
+```bash
+./merged_frontend/run_stack.sh
+```
 
-5. Start merged Streamlit frontend:
-   ```bash
-   streamlit run merged_frontend/streamlit_merged_app.py
-   ```
+This starts all 3 services together and stops them together on Ctrl+C.
 
-## Notes
-- The app looks for music in `merged_frontend/music` first.
-- If that folder does not exist, it automatically falls back to `crossfade/music`.
-- BPM is normalized to 50–145 in 5 BPM increments to match your track naming convention.
+## If you insist on running from `merged_frontend/`
+
+Use one of these:
+
+```bash
+# Option A: point uvicorn directly to the api folder
+python -m uvicorn --app-dir ../api_endpoint algo:app --reload --port 8000
+
+# Option B: set PYTHONPATH to repo root and keep package import
+PYTHONPATH=.. python -m uvicorn api_endpoint.algo:app --reload --port 8000
+```
+
+## Hacky but practical multi-instance patterns
+
+If you want independent test sessions:
+
+```bash
+# session 1
+python -m uvicorn api_endpoint.algo:app --reload --port 8000
+python -m uvicorn merged_frontend.player_server:app --reload --port 8502
+python -m streamlit run merged_frontend/streamlit_merged_app.py --server.port 8501
+
+# session 2
+python -m uvicorn api_endpoint.algo:app --reload --port 8100
+python -m uvicorn merged_frontend.player_server:app --reload --port 8602
+TEMPO_API=http://127.0.0.1:8100/tempo_mood PLAYER_WS=ws://127.0.0.1:8602/ws \
+python -m streamlit run merged_frontend/streamlit_merged_app.py --server.port 8601
+```
+
+> Note: for multi-instance routing, keep ports unique and point Streamlit to the matching API + player URLs.
+
+## Music folder behavior
+
+- Primary search path: `merged_frontend/music`
+- Fallback search path: `crossfade/music`
+- Expected filename style: `"<bpm> - <name>.mp3"` (BPM normalized 50–145 in steps of 5)

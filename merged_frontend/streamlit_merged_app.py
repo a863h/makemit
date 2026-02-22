@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,8 +12,8 @@ import streamlit as st
 import websockets
 
 # --- Endpoints ---
-PLAYER_WS = "ws://127.0.0.1:8502/ws"
-TEMPO_API = "http://127.0.0.1:8000/tempo_mood"
+PLAYER_WS = os.getenv("PLAYER_WS", "ws://127.0.0.1:8502/ws")
+TEMPO_API = os.getenv("TEMPO_API", "http://127.0.0.1:8000/tempo_mood")
 
 # --- Track config ---
 BASE_DIR = Path(__file__).resolve().parent
