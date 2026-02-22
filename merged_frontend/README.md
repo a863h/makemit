@@ -4,7 +4,10 @@ This folder combines:
 - BPM from the accelerometer API (`/tempo_mood`)
 - Track selection by BPM
 - WebSocket commands to the crossfader player
+- LED strip BPM feed through the cadence API (`/tempo`)
 - A Streamlit UI for observing BPM and track transitions
+
+The Streamlit UI now also shows whether the accelerometer ESP32 and LED-strip ESP32 are connected.
 
 ## Why your `api_endpoint` import can fail
 

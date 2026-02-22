@@ -3,6 +3,7 @@ from typing import List
 from enum import Enum
 from pydantic import BaseModel
 import numpy as np
+import time
 
 # ============================================
 # CONFIG
@@ -51,6 +52,10 @@ current_bpm = 65
 current_mood = Emotions.NEUTRAL
 last_activity_sample = 0
 STILL_THRESHOLD_SECONDS = 2
+
+last_accelerometer_seen = 0.0
+last_led_seen = 0.0
+DEVICE_TIMEOUT_SECONDS = 15
 
 # ============================================
 # ZERO-CROSSING ENGINE
@@ -140,7 +145,7 @@ async def root():
 
 @app.post("/acc_data")
 async def receive_accelerations(payload: AccelData):
-    global current_bpm, current_mood
+    global current_bpm, current_mood, last_accelerometer_seen
 
     raw = payload.data
     print("Received batch length:", len(raw))
@@ -159,12 +164,29 @@ async def receive_accelerations(payload: AccelData):
 
     current_bpm = bpm
     current_mood = classify_mood(bpm)
+    last_accelerometer_seen = time.time()
 
     return {"received": len(matrix)}
 
 @app.get("/tempo_mood")
 async def get_tempo_mood():
+    now = time.time()
+
     return {
         "tempo": round(current_bpm, 2),
-        "mood": current_mood.name
+        "mood": current_mood.name,
+        "devices": {
+            "accelerometer_connected": (now - last_accelerometer_seen) <= DEVICE_TIMEOUT_SECONDS,
+            "led_strip_connected": (now - last_led_seen) <= DEVICE_TIMEOUT_SECONDS,
+            "last_accelerometer_seen": last_accelerometer_seen,
+            "last_led_seen": last_led_seen,
+        },
     }
+
+
+@app.get("/tempo")
+async def get_tempo():
+    global last_led_seen
+
+    last_led_seen = time.time()
+    return int(round(current_bpm))
