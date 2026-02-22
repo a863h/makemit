@@ -28,6 +28,12 @@ class TempoState:
     mood: str
     accelerometer_connected: bool
     led_strip_connected: bool
+    accelerometer_host: str | None
+    accelerometer_port: int | None
+    led_strip_host: str | None
+    led_strip_port: int | None
+    debug: dict
+    raw_payload: dict
 
 
 def clamp(n: int, lo: int, hi: int) -> int:
@@ -73,6 +79,12 @@ def fetch_tempo() -> TempoState:
         mood=mood,
         accelerometer_connected=accelerometer_connected,
         led_strip_connected=led_strip_connected,
+        accelerometer_host=devices.get("accelerometer_host"),
+        accelerometer_port=devices.get("accelerometer_port"),
+        led_strip_host=devices.get("led_strip_host"),
+        led_strip_port=devices.get("led_strip_port"),
+        debug=payload.get("debug", {}),
+        raw_payload=payload,
     )
 
 
@@ -104,6 +116,12 @@ def initialize_state() -> None:
         "refresh_seconds": 2,
         "accelerometer_connected": False,
         "led_strip_connected": False,
+        "accelerometer_host": None,
+        "accelerometer_port": None,
+        "led_strip_host": None,
+        "led_strip_port": None,
+        "debug_info": {},
+        "last_payload": {},
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -122,6 +140,12 @@ def update_from_accelerometer() -> None:
     st.session_state.api_mood = tempo.mood
     st.session_state.accelerometer_connected = tempo.accelerometer_connected
     st.session_state.led_strip_connected = tempo.led_strip_connected
+    st.session_state.accelerometer_host = tempo.accelerometer_host
+    st.session_state.accelerometer_port = tempo.accelerometer_port
+    st.session_state.led_strip_host = tempo.led_strip_host
+    st.session_state.led_strip_port = tempo.led_strip_port
+    st.session_state.debug_info = tempo.debug
+    st.session_state.last_payload = tempo.raw_payload
     st.session_state.last_updated = time.strftime("%H:%M:%S")
 
     target_bpm = normalize_bpm(tempo.bpm)
@@ -190,6 +214,13 @@ def main() -> None:
         f"**LED Strip ESP32:** {'Connected' if st.session_state.led_strip_connected else 'Disconnected'}"
     )
 
+    st.write(
+        f"**Accelerometer ESP32 Wi-Fi endpoint:** {st.session_state.accelerometer_host or 'N/A'}:{st.session_state.accelerometer_port or 'N/A'}"
+    )
+    st.write(
+        f"**LED Strip ESP32 Wi-Fi endpoint:** {st.session_state.led_strip_host or 'N/A'}:{st.session_state.led_strip_port or 'N/A'}"
+    )
+
     st.subheader("Track transition state")
     st.write(f"**Current playing BPM:** {st.session_state.current_bpm if st.session_state.current_bpm is not None else 'N/A'}")
     st.write(f"**Current song:** {st.session_state.current_track or 'N/A'}")
@@ -200,6 +231,12 @@ def main() -> None:
         st.error(st.session_state.last_error)
     else:
         st.success("Connected and ready.")
+
+    st.subheader("Debug information")
+    st.write("**API raw payload:**")
+    st.json(st.session_state.last_payload or {"info": "No payload received yet."})
+    st.write("**Engine debug fields:**")
+    st.json(st.session_state.debug_info or {"info": "No debug data available yet."})
 
     st.markdown(
         """
