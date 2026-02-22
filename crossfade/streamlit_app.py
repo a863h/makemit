@@ -11,7 +11,7 @@ import streamlit as st
 import websockets
 
 PLAYER_WS = "ws://127.0.0.1:8502/ws"
-TEMPO_API = os.getenv("TEMPO_API", "http://127.0.0.1:8000/tempo_mood")
+TEMPO_API = os.getenv("TEMPO_API", "http://172.20.10.5:8000/tempo_mood")
 
 BASE_DIR = Path(__file__).parent
 MUSIC_DIR = BASE_DIR / "music"
