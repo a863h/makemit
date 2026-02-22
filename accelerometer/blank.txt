@@ -1,0 +1,168 @@
+#include <stdio.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_timer.h"
+#include <inttypes.h> // Required for PRIu64
+
+#include <vector>
+#include <cmath>
+#include <numeric>
+
+// Configuration
+const int windowSize = 5;
+const adc_channel_t sensor_channel = ADC_CHANNEL_0; // GPIO 1 on ADC1
+const adc_unit_t adc_unit = ADC_UNIT_1;
+
+adc_oneshot_chan_cfg_t config = {
+    .atten = ADC_ATTEN_DB_12, // Ensure this is 12dB
+    .bitwidth = ADC_BITWIDTH_DEFAULT,
+};
+
+// Buffer to store IBIs for the current minute
+std::vector<uint64_t> ibi_buffer;
+uint64_t minute_start_time = 0;
+
+void process_hrv_metrics(uint64_t current_ibi)
+{
+  uint64_t now = esp_timer_get_time() / 1000; // current time in ms
+
+  // Initialize the timer if this is the first beat
+  if (minute_start_time == 0)
+    minute_start_time = now;
+
+  // Add the IBI (the time between this beat and the last) to our list
+  ibi_buffer.push_back(current_ibi);
+
+  // Check if 30 seconds (30,000 ms) have passed
+  if (now - minute_start_time >= 30000)
+  {
+    if (ibi_buffer.size() < 5)
+    {
+      printf("Not enough data points for reliable HRV.\n");
+    }
+    else
+    {
+      // 1. Calculate Average Heart Rate (BPM)
+      // Average IBI = total time / number of beats
+      double avg_ibi = std::accumulate(ibi_buffer.begin(), ibi_buffer.end(), 0.0) / ibi_buffer.size();
+      double avg_bpm = 60000.0 / avg_ibi;
+
+      // 2. Calculate RMSSD (HRV Metric)
+      double sum_sq_diff = 0;
+      for (size_t i = 0; i < ibi_buffer.size() - 1; i++)
+      {
+        long diff = (long)ibi_buffer[i + 1] - (long)ibi_buffer[i];
+        sum_sq_diff += (double)(diff * diff);
+      }
+      double rmssd = std::sqrt(sum_sq_diff / (ibi_buffer.size() - 1));
+
+      // Output results
+      printf("\n--- Minute Report ---\n");
+      printf("Average BPM: %.1f\n", avg_bpm);
+      printf("HRV (RMSSD): %.2f ms\n", rmssd);
+      printf("Beats tracked: %d\n", ibi_buffer.size());
+      printf("---------------------\n\n");
+    }
+
+    // Reset for the next minute
+    ibi_buffer.clear();
+    minute_start_time = now;
+  }
+}
+
+extern "C" void app_main(void)
+{
+
+  // 1. Initialize ADC
+  adc_oneshot_unit_handle_t adc1_handle;
+  adc_oneshot_unit_init_cfg_t init_config1 = {
+      .unit_id = adc_unit,
+  };
+  adc_oneshot_new_unit(&init_config1, &adc1_handle);
+
+  adc_oneshot_chan_cfg_t config = {
+      .atten = ADC_ATTEN_DB_12, // For 0-3.3V range
+      .bitwidth = ADC_BITWIDTH_DEFAULT,
+  };
+  adc_oneshot_config_channel(adc1_handle, sensor_channel, &config);
+
+  // 2. Variables for logic
+  int readings[windowSize] = {0};
+  int readIndex = 0;
+  long total = 0;
+  uint64_t lastPulseTime = 0;
+  int threshold = 3000;
+  bool pulseDetected = false;
+
+  // Add these to your variables
+  float lowPass = 0;
+  const float alpha = 0.99; // Baseline tracking speed
+
+  while (1)
+  {
+    // 1. Single ADC Read (Remove the second adc_oneshot_read!)
+    int raw_val = 0;
+    adc_oneshot_read(adc1_handle, sensor_channel, &raw_val);
+
+    // 2. Moving Average for Smoothing
+    total = total - readings[readIndex];
+    readings[readIndex] = raw_val;
+    total = total + readings[readIndex];
+    readIndex = (readIndex + 1) % windowSize;
+    int smoothValue = total / windowSize;
+
+    // 3. Track the baseline (High-pass filter)
+    // We use smoothValue here to keep the baseline from jittering
+    lowPass = (alpha * lowPass) + ((1 - alpha) * smoothValue);
+    float acValue = smoothValue - lowPass;
+
+    uint64_t currentTime = esp_timer_get_time() / 1000;
+
+    // 4. Pulse Detection (Rising Edge)
+    if (acValue > 15 && !pulseDetected)
+    {
+      uint64_t ibi = currentTime - lastPulseTime;
+      printf("IBI: %llu | AC: %.1f\n", ibi, acValue);
+
+      if (lastPulseTime == 0 || ibi > 1300)
+      {
+        lastPulseTime = currentTime;
+        printf(">> System Reset/Sync: New pulse sequence started.\n");
+      }
+      else
+      {
+        // Valid human IBI is usually 400ms to 1200ms
+        if (ibi > 350 && ibi < 1300)
+        {
+          process_hrv_metrics(ibi);
+          int bpm = 60000 / ibi;
+          printf("BPM: %d | IBI: %llu | AC: %.1f\n", bpm, ibi, acValue);
+          lastPulseTime = currentTime;
+        }
+      }
+      pulseDetected = true;
+    }
+
+    // 5. RELAXED Reset Logic (The "Hysteresis")
+    // Reset when the signal drops back toward the baseline
+    if (acValue < 0)
+    {
+      pulseDetected = false;
+    }
+    printf("AC: %.1f\n", acValue);
+
+
+    // printf("raw: %d\n", smoothValue);
+
+    // Optional: Periodic Debugging (Don't print every 10ms or you'll lag the CPU)
+    static int plotDiv = 0;
+    if (plotDiv++ % 5 == 0)
+    {
+      // printf("AC:%.1f, Thresh:60, Reset:20\n", acValue);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
