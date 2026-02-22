@@ -8,7 +8,7 @@ import numpy as np
 # CONFIG
 # ============================================
 
-fs = 50
+fs = 5
 MAX_INTERVALS = 10
 
 # ============================================
@@ -70,25 +70,20 @@ def calculate_tempo(data, sampling_rate):
         return 65, []
 
     alpha = 0.1
-    DEAD_ZONE = 0.2
+    DEAD_ZONE = 1.2
     crossings = []
 
     for sample in data:
-
-        # 1️⃣ Update running average
         running_avg = alpha * sample + (1 - alpha) * running_avg
         centered = sample - running_avg
-
-        # 2️⃣ Detect positive zero-crossing
         if prev_sample is not None:
             if prev_sample < -DEAD_ZONE and centered >= DEAD_ZONE:
-
                 if last_cross_sample is not None:
                     interval = (global_sample_index - last_cross_sample) / sampling_rate
-                    cross_intervals.append(interval)
-
-                    if len(cross_intervals) > MAX_INTERVALS:
-                        cross_intervals.pop(0)
+                    if interval >= 0.4:
+                        cross_intervals.append(interval)
+                        if len(cross_intervals) > MAX_INTERVALS:
+                            cross_intervals.pop(0)
 
                 last_cross_sample = global_sample_index
                 last_activity_sample = global_sample_index
@@ -148,6 +143,8 @@ async def receive_accelerations(payload: AccelData):
     global current_bpm, current_mood
 
     raw = payload.data
+    print("Received batch length:", len(raw))
+    print("First 9 values (3 samples):", raw[:9])
 
     if len(raw) % 3 != 0:
         return {"error": "Data length must be divisible by 3"}
@@ -157,6 +154,8 @@ async def receive_accelerations(payload: AccelData):
     magnitude = np.linalg.norm(matrix, axis=1)
 
     bpm, _ = calculate_tempo(magnitude, fs)
+
+    print("Calculated BPM:", bpm)
 
     current_bpm = bpm
     current_mood = classify_mood(bpm)
