@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from typing import List
 from enum import Enum
 from pydantic import BaseModel
@@ -55,6 +55,10 @@ STILL_THRESHOLD_SECONDS = 2
 
 last_accelerometer_seen = 0.0
 last_led_seen = 0.0
+last_accelerometer_host = None
+last_accelerometer_port = None
+last_led_host = None
+last_led_port = None
 DEVICE_TIMEOUT_SECONDS = 15
 
 # ============================================
@@ -144,8 +148,9 @@ async def root():
     return {"message": "Cadence engine running"}
 
 @app.post("/acc_data")
-async def receive_accelerations(payload: AccelData):
+async def receive_accelerations(payload: AccelData, request: Request):
     global current_bpm, current_mood, last_accelerometer_seen
+    global last_accelerometer_host, last_accelerometer_port
 
     raw = payload.data
     print("Received batch length:", len(raw))
@@ -165,6 +170,8 @@ async def receive_accelerations(payload: AccelData):
     current_bpm = bpm
     current_mood = classify_mood(bpm)
     last_accelerometer_seen = time.time()
+    last_accelerometer_host = request.client.host if request.client else None
+    last_accelerometer_port = request.client.port if request.client else None
 
     return {"received": len(matrix)}
 
@@ -180,13 +187,25 @@ async def get_tempo_mood():
             "led_strip_connected": (now - last_led_seen) <= DEVICE_TIMEOUT_SECONDS,
             "last_accelerometer_seen": last_accelerometer_seen,
             "last_led_seen": last_led_seen,
+            "accelerometer_host": last_accelerometer_host,
+            "accelerometer_port": last_accelerometer_port,
+            "led_strip_host": last_led_host,
+            "led_strip_port": last_led_port,
+        },
+        "debug": {
+            "fs": fs,
+            "cross_intervals_count": len(cross_intervals),
+            "global_sample_index": global_sample_index,
+            "running_avg": round(running_avg, 4),
         },
     }
 
 
 @app.get("/tempo")
-async def get_tempo():
-    global last_led_seen
+async def get_tempo(request: Request):
+    global last_led_seen, last_led_host, last_led_port
 
     last_led_seen = time.time()
+    last_led_host = request.client.host if request.client else None
+    last_led_port = request.client.port if request.client else None
     return int(round(current_bpm))
